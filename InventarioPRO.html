@@ -1,0 +1,544 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>InventarioPro - POS & PDF Facturación</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Librerías para Excel y PDF -->
+    <script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;900&display=swap');
+        body { font-family: 'Inter', sans-serif; background-color: #f1f5f9; }
+        .modal-active { display: flex !important; }
+        .section-hidden { display: none; }
+        .custom-scrollbar::-webkit-scrollbar { width: 5px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
+        .animate-in { animation: fadeIn 0.2s ease-out; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+    </style>
+</head>
+<body class="text-slate-800">
+
+    <!-- NAVBAR -->
+    <nav class="bg-slate-900 text-white sticky top-0 z-50 shadow-2xl">
+        <div class="max-w-7xl mx-auto px-4 flex justify-between items-center h-16">
+            <div class="flex items-center gap-2 cursor-pointer" onclick="showSection('inicio')">
+                <div class="bg-blue-600 p-2 rounded-lg"><i class="fas fa-print text-white"></i></div>
+                <span class="text-xl font-black tracking-tighter uppercase">Inventario<span class="text-blue-400">Pro</span></span>
+            </div>
+            <div class="hidden md:flex space-x-6 font-bold text-xs uppercase tracking-widest">
+                <button onclick="showSection('inicio')" class="hover:text-blue-400 transition">Inicio</button>
+                <button onclick="showSection('pos')" class="hover:text-blue-400 transition">POS</button>
+                <button onclick="showSection('mantenimiento')" class="hover:text-blue-400 transition">Mantenimiento</button>
+                <button onclick="showSection('historial')" class="hover:text-blue-400 transition">Historial</button>
+            </div>
+            <div class="relative"><input type="text" onkeyup="filterProducts(this.value)" class="bg-slate-800 border-none text-xs rounded-xl py-2 px-10 w-48 focus:w-64 focus:ring-2 focus:ring-blue-500 transition-all outline-none" placeholder="Buscar..."><i class="fas fa-search absolute left-4 top-2.5 text-slate-500 text-[10px]"></i></div>
+        </div>
+    </nav>
+
+    <main class="max-w-7xl mx-auto p-4 md:p-8">
+        
+        <!-- DASHBOARD -->
+        <section id="sec-inicio">
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+                <div class="bg-white p-8 rounded-[2rem] shadow-sm border border-slate-200">
+                    <p class="text-slate-400 text-[10px] font-black uppercase tracking-widest mb-2">Ventas de Hoy</p>
+                    <h3 id="dash-ventas" class="text-4xl font-black tracking-tighter text-slate-900">S/ 0.00</h3>
+                </div>
+                <div class="bg-white p-8 rounded-[2rem] shadow-sm border border-slate-200">
+                    <p class="text-slate-400 text-[10px] font-black uppercase tracking-widest mb-2">Items en Stock</p>
+                    <h3 id="dash-stock" class="text-4xl font-black tracking-tighter text-slate-900">0</h3>
+                </div>
+                <div class="bg-white p-8 rounded-[2rem] shadow-sm border border-slate-200">
+                    <p class="text-slate-400 text-[10px] font-black uppercase tracking-widest mb-2">Comprobantes</p>
+                    <h3 id="dash-trans" class="text-4xl font-black tracking-tighter text-slate-900">0</h3>
+                </div>
+            </div>
+            <div class="bg-blue-600 rounded-[2.5rem] p-12 text-white flex justify-between items-center shadow-2xl relative overflow-hidden">
+                <div class="relative z-10">
+                    <h2 class="text-5xl font-black tracking-tighter mb-4">Gestión de <br>Punto de Venta</h2>
+                    <p class="text-blue-100 mb-6 font-medium">Genera comprobantes PDF profesionales al instante.</p>
+                    <button onclick="showSection('pos')" class="bg-white text-blue-600 px-8 py-4 rounded-2xl font-black text-sm uppercase tracking-widest hover:bg-slate-100 transition-all shadow-xl">Comenzar Venta</button>
+                </div>
+                <i class="fas fa-file-invoice-dollar absolute -right-10 -bottom-10 text-[250px] text-white/10 -rotate-12"></i>
+            </div>
+        </section>
+
+        <!-- POS -->
+        <section id="sec-pos" class="section-hidden animate-in">
+            <div class="flex flex-col lg:flex-row gap-8">
+                <div id="productGrid" class="flex-1 grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-6"></div>
+                <div class="w-full lg:w-96">
+                    <div class="bg-white rounded-[2rem] shadow-2xl border border-slate-100 flex flex-col h-[700px] sticky top-24 overflow-hidden">
+                        <div class="p-6 border-b font-black uppercase text-xs tracking-widest bg-slate-50">Resumen del Ticket</div>
+                        <div id="cartItems" class="flex-1 overflow-y-auto p-6 space-y-4 custom-scrollbar"></div>
+                        <div class="p-8 bg-slate-900 border-t">
+                            <div class="flex justify-between mb-6 text-slate-400 font-bold uppercase text-[10px] tracking-widest"><span>Total Final</span><span id="cartTotal" class="text-2xl text-white font-black">S/ 0.00</span></div>
+                            <button onclick="processSale()" class="w-full bg-blue-600 py-5 rounded-2xl text-white font-black uppercase tracking-widest text-xs hover:bg-blue-500 transition-all shadow-xl">Registrar Venta</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- MANTENIMIENTO -->
+        <section id="sec-mantenimiento" class="section-hidden animate-in">
+            <div class="flex justify-between items-end mb-8">
+                <h2 class="text-3xl font-black tracking-tighter">Inventario Pro</h2>
+                <div class="flex gap-2">
+                    <button onclick="exportInventoryToExcel()" class="bg-emerald-600 text-white px-4 py-2 rounded-lg font-bold text-xs uppercase tracking-widest shadow-lg hover:bg-emerald-700 transition-all flex items-center gap-2">
+                        <i class="fas fa-file-excel"></i> Excel
+                    </button>
+                    <button onclick="openModal()" class="bg-blue-600 text-white px-4 py-2 rounded-xl font-bold text-xs uppercase tracking-widest shadow-lg hover:bg-blue-700 transition-all">+ Nuevo</button>
+                </div>
+            </div>
+            <div class="bg-white rounded-[2rem] shadow-xl border border-slate-200 overflow-hidden">
+                <table class="w-full text-left">
+                    <thead class="bg-slate-50 text-[10px] font-black uppercase tracking-widest text-slate-400 border-b">
+                        <tr><th class="px-8 py-5">Vista</th><th class="px-8 py-5">Cod.</th><th class="px-8 py-5">Producto</th><th class="px-8 py-5">Stock</th><th class="px-8 py-5 text-right">Precio</th><th class="px-8 py-5 text-center">Opciones</th></tr>
+                    </thead>
+                    <tbody id="maintenanceTableBody" class="divide-y divide-slate-100"></tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- HISTORIAL -->
+        <section id="sec-historial" class="section-hidden animate-in">
+            <div class="flex justify-between items-end mb-8">
+                <h2 class="text-3xl font-black tracking-tighter">Historial de Ventas</h2>
+                <button onclick="exportSalesToExcel()" class="bg-emerald-600 text-white px-6 py-2 rounded-lg font-bold text-xs uppercase tracking-widest shadow-lg hover:bg-emerald-700 transition-all flex items-center gap-2">
+                    <i class="fas fa-file-excel"></i> Descargar Log
+                </button>
+            </div>
+            <div class="bg-white rounded-[2rem] shadow-xl border border-slate-200 overflow-hidden">
+                <table class="w-full text-left text-sm">
+                    <thead class="bg-slate-50 text-[10px] font-black uppercase tracking-widest text-slate-400 border-b">
+                        <tr>
+                            <th class="px-8 py-5">Ticket ID</th>
+                            <th class="px-8 py-5">Fecha</th>
+                            <th class="px-8 py-5">Resumen</th>
+                            <th class="px-8 py-5 text-right">Monto</th>
+                            <th class="px-8 py-5 text-center">DNI/RUC</th>
+                            <th class="px-8 py-5 text-center">Nombre/RS</th>
+                            <th class="px-8 py-5 text-center">Imprimir</th>
+                        </tr>
+                    </thead>
+                    <tbody id="salesHistoryBody" class="divide-y divide-slate-100"></tbody>
+                </table>
+            </div>
+        </section>
+    </main>
+
+    <!-- MODAL: DATOS CLIENTE PARA PDF -->
+    <div id="pdfModal" class="fixed inset-0 bg-slate-900/90 backdrop-blur-sm z-[200] hidden items-center justify-center p-4">
+        <div class="bg-white rounded-[2.5rem] w-full max-w-md shadow-2xl animate-in">
+            <div class="p-8 border-b bg-slate-50 flex flex-col items-center">
+                <div class="bg-blue-100 text-blue-600 w-16 h-16 rounded-full flex items-center justify-center mb-4"><i class="fas fa-user-tag text-2xl"></i></div>
+                <h3 class="text-xl font-black tracking-tighter">DATOS DEL CLIENTE</h3>
+                <p class="text-xs text-slate-400 font-bold uppercase tracking-widest">Generación de Comprobante PDF</p>
+            </div>
+            <div class="p-8 space-y-4">
+                <input type="hidden" id="pdf-sale-id">
+                <div>
+                    <label class="block text-[10px] font-black uppercase text-slate-400 mb-1 ml-1">Nombre o Razón Social</label>
+                    <input type="text" id="cust-name" placeholder="Público en General" class="w-full bg-slate-100 border-none rounded-2xl px-5 py-4 outline-none focus:ring-2 focus:ring-blue-500 font-bold">
+                </div>
+                <div>
+                    <label class="block text-[10px] font-black uppercase text-slate-400 mb-1 ml-1">DNI / RUC</label>
+                    <input type="text" id="cust-doc" placeholder="00000000" class="w-full bg-slate-100 border-none rounded-2xl px-5 py-4 outline-none focus:ring-2 focus:ring-blue-500 font-bold">
+                </div>
+                <div class="pt-4 grid grid-cols-2 gap-3">
+                    <button onclick="closePdfModal()" class="py-4 font-black text-xs uppercase text-slate-400 tracking-widest">Cancelar</button>
+                    <button onclick="confirmPrintPDF()" class="bg-blue-600 py-4 rounded-2xl text-white font-black text-xs uppercase tracking-widest shadow-xl hover:bg-blue-700 transition-all">Generar PDF</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL: PRODUCTO -->
+    <div id="productModal" class="fixed inset-0 bg-slate-900/90 backdrop-blur-sm z-[100] hidden items-center justify-center p-4">
+        <div class="bg-white rounded-[2.5rem] w-full max-w-lg shadow-2xl animate-in overflow-hidden">
+            <div class="p-8 border-b flex justify-between items-center bg-slate-50">
+                <h3 id="modalTitle" class="text-xl font-black tracking-tighter uppercase">Gestionar Producto</h3>
+                <button onclick="closeModal()" class="text-slate-300 hover:text-slate-900 transition-colors"><i class="fas fa-times-circle text-2xl"></i></button>
+            </div>
+            <form id="productForm" class="p-10 space-y-6">
+                <input type="hidden" id="edit-id">
+                <div class="flex justify-center mb-4">
+                    <div class="relative group cursor-pointer">
+                        <img id="img-preview" src="https://placehold.co/100x100?text=S/I" class="w-24 h-24 rounded-[2rem] object-cover border-4 border-slate-100 shadow-xl group-hover:opacity-75 transition">
+                        <label class="absolute inset-0 flex items-center justify-center text-white opacity-0 group-hover:opacity-100"><i class="fas fa-camera"></i><input type="file" id="p-img-file" class="hidden" accept="image/*" onchange="previewImage(this)"></label>
+                    </div>
+                </div>
+                <div class="grid grid-cols-2 gap-6">
+                    <div class="col-span-2">
+                        <label class="block text-[10px] font-black uppercase text-slate-400 mb-1 ml-1">Descripción</label>
+                        <input type="text" id="p-nombre" required class="w-full bg-slate-100 border-none rounded-2xl px-5 py-4 outline-none focus:ring-2 focus:ring-blue-500 font-bold">
+                    </div>
+                    <div>
+                        <label class="block text-[10px] font-black uppercase text-slate-400 mb-1 ml-1">Código Único</label>
+                        <input type="text" id="p-codigo" required class="w-full bg-slate-100 border-none rounded-2xl px-5 py-4 outline-none focus:ring-2 focus:ring-blue-500 font-bold">
+                    </div>
+                    <div>
+                        <label class="block text-[10px] font-black uppercase text-slate-400 mb-1 ml-1">Stock</label>
+                        <input type="number" id="p-stock" required class="w-full bg-slate-100 border-none rounded-2xl px-5 py-4 outline-none font-bold">
+                    </div>
+                    <div>
+                        <label class="block text-[10px] font-black uppercase text-slate-400 mb-1 ml-1">Precio Unitario (S/)</label>
+                        <input type="number" step="0.01" id="p-precio" required class="w-full bg-slate-100 border-none rounded-2xl px-5 py-4 outline-none font-bold">
+                    </div>
+                    <div class="col-span-2">
+                        <label class="block text-[10px] font-black uppercase text-slate-400 mb-1 ml-1">Categoría</label>
+                        <select id="p-cat" class="w-full bg-slate-100 border-none rounded-2xl px-5 py-4 outline-none font-bold">
+                            <option>Electrónica</option><option>Hogar</option><option>Accesorios</option>
+                        </select>
+                    </div>
+                </div>
+                <button type="submit" class="w-full bg-slate-900 py-5 rounded-2xl text-white font-black uppercase tracking-widest text-xs hover:bg-blue-600 shadow-xl transition-all">Guardar Cambios</button>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        // --- GLOBAL STATE ---
+        let products = JSON.parse(localStorage.getItem('ip_products')) || [
+            { id: 1, nombre: 'Monitor Pro Gamer 27"', categoria: 'Electrónica', stock: 12, codigo: 'MON-27P', precio: 1250.00, img: 'https://placehold.co/400x300?text=Monitor' },
+            { id: 2, nombre: 'Mouse Inalámbrico RGB', categoria: 'Accesorios', stock: 45, codigo: 'MOU-RGB', precio: 85.00, img: 'https://placehold.co/400x300?text=Mouse' }
+        ];
+        let cart = [];
+        let sales = JSON.parse(localStorage.getItem('ip_sales')) || [];
+        let currentImgBase64 = "";
+
+        // --- NAVEGACIÓN ---
+        function showSection(sectionId) {
+            document.querySelectorAll('main > section').forEach(sec => sec.classList.add('section-hidden'));
+            document.getElementById(`sec-${sectionId}`).classList.remove('section-hidden');
+            renderAll();
+        }
+
+        // --- LÓGICA DE EXCEL ---
+        function exportInventoryToExcel() {
+            const worksheet = XLSX.utils.json_to_sheet(products.map(p => ({
+                CODIGO: p.codigo,
+                PRODUCTO: p.nombre,
+                CATEGORIA: p.categoria,
+                STOCK: p.stock,
+                PRECIO: p.precio
+            })));
+            const workbook = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(workbook, worksheet, "Inventario");
+            XLSX.writeFile(workbook, "Reporte_Inventario.xlsx");
+        }
+
+        function exportSalesToExcel() {
+            const worksheet = XLSX.utils.json_to_sheet(sales.map(s => ({
+                TICKET_ID: s.id,
+                FECHA: s.fecha,
+                CLIENTE: s.clienteNombre || 'S/N',
+                DOCUMENTO: s.clienteDoc || 'S/N',
+                DETALLE: s.productos,
+                TOTAL: s.total
+            })));
+            const workbook = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(workbook, worksheet, "Ventas");
+            XLSX.writeFile(workbook, "Historial_Ventas.xlsx");
+        }
+
+        // --- LÓGICA DE PDF (jsPDF) ---
+        function openPdfModal(saleId) {
+            const sale = sales.find(s => s.id === saleId);
+            document.getElementById('pdf-sale-id').value = saleId;
+            document.getElementById('cust-name').value = sale.clienteNombre || "";
+            document.getElementById('cust-doc').value = sale.clienteDoc || "";
+            document.getElementById('pdfModal').classList.add('modal-active');
+        }
+
+        function closePdfModal() { document.getElementById('pdfModal').classList.remove('modal-active'); }
+
+        function confirmPrintPDF() {
+            const saleId = document.getElementById('pdf-sale-id').value;
+            const saleIndex = sales.findIndex(s => s.id === saleId);
+            
+            const customer = {
+                name: document.getElementById('cust-name').value || "PÚBLICO EN GENERAL",
+                doc: document.getElementById('cust-doc').value || "00000000"
+            };
+
+            // ACTUALIZAR DATOS EN EL HISTORIAL (LOCAL STORAGE)
+            sales[saleIndex].clienteNombre = customer.name;
+            sales[saleIndex].clienteDoc = customer.doc;
+
+            saveData();
+            renderAll(); // Refrescar tablas
+            
+            generatePDFTicket(sales[saleIndex], customer);
+            closePdfModal();
+        }
+
+        function generatePDFTicket(sale, customer) {
+            const { jsPDF } = window.jspdf;
+            const doc = new jsPDF({ unit: 'mm', format: [80, 150] });
+            const margin = 5;
+            let cursorY = 10;
+
+            doc.setFontSize(14); doc.setFont("helvetica", "bold");
+            doc.text("INVENTARIOPRO S.A.C.", 40, cursorY, { align: "center" });
+            
+            doc.setFontSize(8); doc.setFont("helvetica", "normal");
+            cursorY += 5; doc.text("RUC: 20605555551", 40, cursorY, { align: "center" });
+            cursorY += 4; doc.text("AV. TECNOLOGÍA 123 - LIMA", 40, cursorY, { align: "center" });
+
+            cursorY += 5; doc.setLineWidth(0.1); doc.line(margin, cursorY, 80 - margin, cursorY);
+
+            cursorY += 5; doc.setFont("helvetica", "bold");
+            doc.text("BOLETA DE VENTA ELECTRÓNICA", margin, cursorY);
+            cursorY += 4; doc.setFont("helvetica", "normal");
+            doc.text(`NRO: ${sale.id}`, margin, cursorY);
+            doc.text(`FECHA: ${sale.fecha}`, margin, cursorY + 4);
+
+            cursorY += 10; doc.text(`CLIENTE: ${customer.name}`, margin, cursorY);
+            cursorY += 4; doc.text(`DNI/RUC: ${customer.doc}`, margin, cursorY);
+
+            cursorY += 8; doc.setFont("helvetica", "bold");
+            doc.text("DESCRIPCIÓN", margin, cursorY);
+            doc.text("TOTAL", 75, cursorY, { align: "right" });
+            
+            cursorY += 5; doc.setFont("helvetica", "normal");
+            doc.text(sale.productos, margin, cursorY, { maxWidth: 50 });
+            doc.text(`S/ ${sale.total.toFixed(2)}`, 75, cursorY, { align: "right" });
+
+            cursorY += 15; doc.setFont("helvetica", "bold");
+            doc.text("TOTAL A PAGAR:", 40, cursorY, { align: "right" });
+            doc.text(`S/ ${sale.total.toFixed(2)}`, 75, cursorY, { align: "right" });
+
+            doc.save(`Ticket_${sale.id}.pdf`);
+        }
+
+        // --- CRUD PRODUCTOS ---
+        function previewImage(input) {
+            if (input.files && input.files[0]) {
+                const reader = new FileReader();
+                reader.onload = e => { currentImgBase64 = e.target.result; document.getElementById('img-preview').src = currentImgBase64; }
+                reader.readAsDataURL(input.files[0]);
+            }
+        }
+
+        function deleteProduct(id) {
+            if(confirm('¿Está seguro de eliminar este producto del inventario?')) {
+                products = products.filter(p => p.id !== id);
+                saveData();
+                renderAll();
+            }
+        }
+
+        function openModal(prodId = null) {
+            const form = document.getElementById('productForm');
+            const codeInput = document.getElementById('p-codigo');
+            form.reset();
+            currentImgBase64 = "";
+            document.getElementById('img-preview').src = "https://placehold.co/100x100?text=S/I";
+
+            if (prodId) {
+                const p = products.find(x => x.id == prodId);
+                document.getElementById('edit-id').value = p.id;
+                document.getElementById('p-nombre').value = p.nombre;
+                document.getElementById('p-cat').value = p.categoria;
+                document.getElementById('p-codigo').value = p.codigo;
+                document.getElementById('p-stock').value = p.stock;
+                document.getElementById('p-precio').value = p.precio;
+                document.getElementById('img-preview').src = p.img;
+                currentImgBase64 = p.img;
+                codeInput.readOnly = true;
+                codeInput.classList.add('bg-slate-200');
+            } else {
+                document.getElementById('edit-id').value = "";
+                codeInput.readOnly = false;
+                codeInput.classList.remove('bg-slate-200');
+            }
+            document.getElementById('productModal').classList.add('modal-active');
+        }
+
+        function closeModal() { document.getElementById('productModal').classList.remove('modal-active'); }
+
+        document.getElementById('productForm').addEventListener('submit', (e) => {
+            e.preventDefault();
+            const editId = document.getElementById('edit-id').value;
+            const data = {
+                id: editId ? Number(editId) : Date.now(),
+                nombre: document.getElementById('p-nombre').value,
+                categoria: document.getElementById('p-cat').value,
+                codigo: document.getElementById('p-codigo').value,
+                stock: parseInt(document.getElementById('p-stock').value),
+                precio: parseFloat(document.getElementById('p-precio').value),
+                img: currentImgBase64 || "https://placehold.co/400x300?text=Producto"
+            };
+
+            if (editId) {
+                const idx = products.findIndex(p => p.id == editId);
+                products[idx] = data;
+            } else {
+                products.push(data);
+            }
+            saveData(); renderAll(); closeModal();
+        });
+
+        // --- POS ---
+        function addToCart(id) {
+            const p = products.find(x => x.id === id);
+            if(p.stock <= 0) return alert('Stock insuficiente');
+            const inCart = cart.find(x => x.id === id);
+            if(inCart) {
+                if(inCart.qty < p.stock) inCart.qty++;
+                else alert('Stock máximo');
+            } else {
+                cart.push({...p, qty: 1});
+            }
+            renderCart();
+        }
+
+        // --- NUEVAS FUNCIONES DEL CARRITO ---
+        function updateCartQty(id, delta) {
+            const item = cart.find(x => x.id === id);
+            const p = products.find(x => x.id === id);
+            if (item) {
+                if (delta > 0 && item.qty >= p.stock) return alert('Stock máximo alcanzado');
+                item.qty += delta;
+                if (item.qty <= 0) removeFromCart(id);
+            }
+            renderCart();
+        }
+
+        function removeFromCart(id) {
+            cart = cart.filter(x => x.id !== id);
+            renderCart();
+        }
+
+        function processSale() {
+            if(cart.length === 0) return;
+            const total = cart.reduce((s, i) => s + (i.precio * i.qty), 0);
+            const saleId = `B001-${Math.floor(Math.random()*90000)+10000}`;
+            const sale = {
+                id: saleId,
+                fecha: new Date().toLocaleString(),
+                productos: cart.map(i => `${i.nombre} (x${i.qty})`).join(', '),
+                total: total,
+                clienteNombre: '',
+                clienteDoc: ''
+            };
+            cart.forEach(item => { const p = products.find(x => x.id === item.id); p.stock -= item.qty; });
+            sales.unshift(sale);
+            cart = []; saveData(); renderAll();
+            alert(`Venta exitosa: ${saleId}.`);
+        }
+
+        // --- RENDERS ---
+        function renderProductGrid(prods = products) {
+            document.getElementById('productGrid').innerHTML = prods.map(p => `
+                <div class="bg-white rounded-[2rem] shadow-sm border border-slate-100 overflow-hidden group hover:shadow-2xl transition-all duration-500">
+                    <div class="h-44 relative overflow-hidden">
+                        <img src="${p.img}" class="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700">
+                        <div class="absolute top-4 right-4 bg-slate-900/80 text-white text-[9px] font-black px-3 py-1 rounded-full backdrop-blur">STOCK: ${p.stock}</div>
+                    </div>
+                    <div class="p-6">
+                        <h4 class="font-black text-sm uppercase tracking-tight truncate">${p.nombre}</h4>
+                        <p class="text-[9px] font-bold text-slate-400 mt-1 uppercase tracking-widest">COD: ${p.codigo}</p>
+                        <div class="flex justify-between items-center mt-6">
+                            <span class="text-xl font-black">S/ ${p.precio.toFixed(2)}</span>
+                            <button onclick="addToCart(${p.id})" class="bg-blue-600 text-white p-3 rounded-2xl hover:bg-slate-900 transition shadow-lg active:scale-90"><i class="fas fa-plus"></i></button>
+                        </div>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function renderMaintenance() {
+            document.getElementById('maintenanceTableBody').innerHTML = products.map(p => `
+                <tr class="hover:bg-slate-50 transition">
+                    <td class="px-8 py-4"><img src="${p.img}" class="w-10 h-10 rounded-xl object-cover shadow-sm"></td>
+                    <td class="px-8 py-4 font-mono text-[10px] text-slate-400 font-bold">${p.codigo}</td>
+                    <td class="px-8 py-4 font-black text-xs uppercase">${p.nombre}</td>
+                    <td class="px-8 py-4 text-center"><span class="px-3 py-1 rounded-full text-[9px] font-black ${p.stock < 5 ? 'bg-red-100 text-red-600' : 'bg-emerald-100 text-emerald-600'}">${p.stock} UNID.</span></td>
+                    <td class="px-8 py-4 text-right font-black">S/ ${p.precio.toFixed(2)}</td>
+                    <td class="px-8 py-4 text-center space-x-2">
+                        <button onclick="openModal(${p.id})" class="p-2 text-slate-300 hover:text-blue-600 transition"><i class="fas fa-edit"></i></button>
+                        <button onclick="deleteProduct(${p.id})" class="p-2 text-slate-300 hover:text-red-600 transition"><i class="fas fa-trash-alt"></i></button>
+                    </td>
+                </tr>
+            `).join('');
+        }
+
+        function renderSales() {
+            document.getElementById('salesHistoryBody').innerHTML = sales.map(s => `
+                <tr class="hover:bg-slate-50 transition">
+                    <td class="px-8 py-5 font-black text-blue-600 italic uppercase">${s.id}</td>
+                    <td class="px-8 py-5 text-[10px] font-bold text-slate-400">${s.fecha}</td>
+                    <td class="px-8 py-5 text-[11px] font-medium text-slate-600 max-w-xs truncate">${s.productos}</td>
+                    <td class="px-8 py-5 text-right font-black">S/ ${s.total.toFixed(2)}</td>
+                    <td class="px-8 py-5 text-center font-bold text-[10px] uppercase">${s.clienteDoc || '---'}</td>
+                    <td class="px-8 py-5 text-center font-bold text-[10px] uppercase">${s.clienteNombre || '---'}</td>
+                    <td class="px-8 py-5 text-center">
+                        <button onclick="openPdfModal('${s.id}')" class="bg-slate-100 p-3 rounded-xl hover:bg-blue-600 hover:text-white transition shadow-sm"><i class="fas fa-file-pdf"></i></button>
+                    </td>
+                </tr>
+            `).join('');
+        }
+
+        function renderCart() {
+            const container = document.getElementById('cartItems');
+            if(cart.length === 0) {
+                container.innerHTML = `<div class="text-center py-20 text-slate-300"><i class="fas fa-receipt text-4xl mb-4"></i><p class="text-[10px] font-black uppercase tracking-widest">Esperando Productos...</p></div>`;
+                document.getElementById('cartTotal').innerText = "S/ 0.00";
+                return;
+            }
+            container.innerHTML = cart.map(item => `
+                <div class="flex items-center gap-4 bg-slate-50 p-4 rounded-2xl border border-slate-100 relative group">
+                    <div class="flex-1">
+                        <h5 class="text-[10px] font-black text-slate-900 uppercase leading-tight pr-6">${item.nombre}</h5>
+                        <p class="text-[9px] font-bold text-blue-600 mt-1">S/ ${item.precio.toFixed(2)} x ${item.qty}</p>
+                        
+                        <!-- CONTROLES DE CANTIDAD -->
+                        <div class="flex items-center gap-3 mt-2">
+                            <button onclick="updateCartQty(${item.id}, -1)" class="w-6 h-6 flex items-center justify-center bg-white border border-slate-200 rounded-lg hover:bg-red-50 hover:text-red-600 transition shadow-sm text-[10px] font-bold">-</button>
+                            <span class="text-xs font-black">${item.qty}</span>
+                            <button onclick="updateCartQty(${item.id}, 1)" class="w-6 h-6 flex items-center justify-center bg-white border border-slate-200 rounded-lg hover:bg-green-50 hover:text-green-600 transition shadow-sm text-[10px] font-bold">+</button>
+                        </div>
+                    </div>
+                    <div class="flex flex-col items-end gap-2">
+                        <span class="font-black text-xs text-slate-900">S/ ${(item.precio * item.qty).toFixed(2)}</span>
+                        <button onclick="removeFromCart(${item.id})" class="text-slate-300 hover:text-red-500 transition">
+                            <i class="fas fa-trash-alt text-xs"></i>
+                        </button>
+                    </div>
+                </div>
+            `).join('');
+            document.getElementById('cartTotal').innerText = `S/ ${cart.reduce((s,i)=>s+(i.precio*i.qty),0).toFixed(2)}`;
+        }
+
+        function filterProducts(q) {
+            const query = q.toLowerCase();
+            const filtered = products.filter(p => p.nombre.toLowerCase().includes(query) || p.codigo.toLowerCase().includes(query));
+            renderProductGrid(filtered);
+        }
+
+        function saveData() {
+            localStorage.setItem('ip_products', JSON.stringify(products));
+            localStorage.setItem('ip_sales', JSON.stringify(sales));
+        }
+
+        function updateDashboard() {
+            document.getElementById('dash-ventas').innerText = `S/ ${sales.reduce((s,v)=>s+v.total,0).toFixed(2)}`;
+            document.getElementById('dash-stock').innerText = products.reduce((s,p)=>s+p.stock,0);
+            document.getElementById('dash-trans').innerText = sales.length;
+        }
+
+        function renderAll() {
+            renderProductGrid(); renderMaintenance(); renderSales(); renderCart(); updateDashboard();
+        }
+
+        renderAll();
+    </script>
+</body>
+</html>
